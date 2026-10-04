@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 虚拟环境（uv sync 生成）
+.venv/
+
+# 会话/工具产生的本地状态
+.agents/
+
+# 编辑器
+.idea/
+.vscode/
+.DS_Store
