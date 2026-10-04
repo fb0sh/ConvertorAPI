@@ -3,7 +3,7 @@
 **Many convertors, one API.**
 
 ConvertorAPI 是一个用 Python 写的自托管 convertor 服务：把散落在各处的格式转换集中到一个 HTTP API 里。
-现在内置 Base64 和 JSON / YAML，以后会越来越多 —— 每加一个 convertor，只要写一个普通函数。
+现在内置 Base64、JSON / YAML，以及 sing-box 订阅迁移，以后会越来越多 —— 每加一个 convertor，只要写一个普通函数。
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg)](https://fastapi.tiangolo.com/)
@@ -18,6 +18,8 @@ ConvertorAPI 是一个用 Python 写的自托管 convertor 服务：把散落在
 | GET | `/base64_decode` | Base64 → 文本 |
 | POST | `/json_to_yaml` | JSON 文本 → YAML 文本 |
 | POST | `/yaml_to_json` | YAML 文本 → JSON 对象（顶层须为 mapping） |
+| POST | `/singbox_migrate` | 迁移一份 sing-box 配置：legacy DNS server、rule_set 下载字段、入站旧字段 → 1.14+ 新格式 |
+| GET | `/singbox_fix` | 拉取 sing-box 订阅并返回迁移后的配置，可直接当订阅地址用 |
 
 `GET /convertors` 返回机器可读的完整清单；`GET /convertors/{name}` 返回单个 convertor 的
 参数、Content-Type、JSON Schema 和示例。
@@ -59,6 +61,52 @@ curl -X POST http://127.0.0.1:8000/yaml_to_json \
   -d '{"yaml_text":"name: alice\nage: 30\n"}'
 # {"name": "alice", "age": 30}
 ```
+
+## 修 sing-box 订阅（1.14 迁移）
+
+sing-box 1.12 移除 GeoIP/Geosite 条件、1.14 移除 legacy DNS server 旧写法、1.16 计划移除
+`download_detour`。服务商模板更新不及时，订阅就会「能导入、启动不了」。这两个 convertor 负责修好它：
+
+| 旧写法（服务商下发） | 新写法（1.14+） |
+| --- | --- |
+| `dns.servers[].address` 字符串 | `{type: udp/tcp/tls/https/quic/http3/local, server, server_port, path}` |
+| `rcode://refused` 型 DNS server | 删掉该 server，DNS 规则改 `action: "predefined"` + `rcode` |
+| DNS 规则省略 `action` | 补 `action: "route"` |
+| DNS 规则里的 `outbound` 条件 | 移除，改用 `route.default_domain_resolver` |
+| 规则里的 `geoip` / `geosite` 条件 | 自动生成 `route.rule_set` 定义并改成 `rule_set` 引用 |
+| `rule_set[].download_detour` | `http_client: {detour: ...}` |
+| 入站 `sniff` / `sniff_timeout` | route 规则 `action: "sniff"` |
+| 入站 `domain_strategy` | route 规则 `action: "resolve"` + `strategy` |
+| 入站 `sniff_override_destination` | 新版无对应字段，删除 |
+
+迁移是**幂等**的，而且出站（节点）一个字节都不动。
+
+手上已经有一份配置时，用 `POST /singbox_migrate`：
+
+```bash
+curl -X POST http://127.0.0.1:8000/singbox_migrate \
+  -H "Content-Type: application/json" \
+  -d "{\"config\": $(cat old-config.json)}" > fixed-config.json
+```
+
+想一劳永逸，就把订阅地址换成 fixer（`GET /singbox_fix`），客户端拿到的一直是迁移好的配置：
+
+```bash
+curl -G http://127.0.0.1:8000/singbox_fix \
+  --data-urlencode "url=https://你的机场/api/v1/client/subscribe?token=XXX" > fixed.json
+```
+
+GUI 里订阅地址直接填（URL 需要转义）：
+
+```
+http://127.0.0.1:8000/singbox_fix?url=https%3A%2F%2F你的机场%2Fapi%2Fv1%2Fclient%2Fsubscribe%3Ftoken%3DXXX
+```
+
+几个实测出来的注意点：
+
+- **同一个订阅会按 User-Agent 下发不同格式**：sing-box 客户端拿到 JSON 配置，Clash 拿到 YAML，v2rayN 拿到 base64 节点列表。`singbox_fix` 默认带 `ua=sing-box/1.14.0`，源站不认这个 UA 时可以换 `ua` 参数。
+- **源站普遍有 UA 白名单和频率限制**，所以 fixer 会缓存回源结果（默认跟随 `profile-update-interval`，限制在 1 分钟到 6 小时之间），不会每次刷新都打源站。
+- 订阅 token 会出现在 fixer 的 URL 和访问日志里，建议只在本机或内网使用。
 
 ## 添加一个 convertor
 
@@ -152,7 +200,8 @@ def parse_int(text: str) -> int:
 │   └── mount.py        # 按函数签名生成请求模型并把 convertor 挂成路由
 └── convertors/
     ├── base64_conv.py  # base64_encode / base64_decode
-    └── json_yaml.py    # json_to_yaml / yaml_to_json
+    ├── json_yaml.py    # json_to_yaml / yaml_to_json
+    └── singbox_fix.py  # singbox_migrate / singbox_fix（含迁移引擎）
 ```
 
 ## 技术栈
