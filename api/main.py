@@ -47,7 +47,10 @@ def _param_docs(fn: Callable[..., Any]) -> list[dict[str, Any]]:
         params.append(
             {
                 "name": name,
-                "type": getattr(annotation, "__name__", str(annotation)),
+                # 联合类型/泛型别名没有 __name__（int | None 会显示成 Union），退回字符串写法
+                "type": annotation.__name__
+                if isinstance(annotation, type)
+                else str(annotation).replace("typing.", ""),
                 "required": required,
                 "default": None if required else param.default,
             }

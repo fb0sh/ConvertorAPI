@@ -3,7 +3,7 @@
 **Many convertors, one API.**
 
 ConvertorAPI 是一个用 Python 写的自托管 convertor 服务：把散落在各处的格式转换集中到一个 HTTP API 里。
-现在内置 Base64、JSON / YAML，以及 sing-box 订阅迁移，以后会越来越多 —— 每加一个 convertor，只要写一个普通函数。
+现在内置 Base64、JSON / YAML、sing-box 订阅迁移，以及 WireGuard → sing-box，以后会越来越多 —— 每加一个 convertor，只要写一个普通函数。
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg)](https://fastapi.tiangolo.com/)
@@ -20,6 +20,7 @@ ConvertorAPI 是一个用 Python 写的自托管 convertor 服务：把散落在
 | POST | `/yaml_to_json` | YAML 文本 → JSON 对象（顶层须为 mapping） |
 | POST | `/singbox_migrate` | 迁移一份 sing-box 配置：legacy DNS server、rule_set 下载字段、入站旧字段 → 1.14+ 新格式 |
 | GET | `/singbox_fix` | 拉取 sing-box 订阅、补齐面板漏发的节点、迁移后返回，可直接当订阅地址用 |
+| POST | `/wireguard2singbox` | WireGuard 客户端 `.conf` → sing-box 配置（1.14+ 的 wireguard endpoint）；`full=false` 只给 endpoint |
 
 `GET /convertors` 返回机器可读的完整清单；`GET /convertors/{name}` 返回单个 convertor 的
 参数、Content-Type、JSON Schema 和示例。
@@ -127,6 +128,62 @@ http://127.0.0.1:8000/singbox_fix?url=https%3A%2F%2F你的机场%2Fapi%2Fv1%2Fcl
 
 代价是每个缓存周期向源站发 2 次请求（配置 + 节点列表），同样由缓存兜住；节点列表拉不到时会退回 sing-box 版，订阅本身仍然可用。不想合并就加 `&merge_nodes=false`。
 
+## WireGuard → sing-box
+
+手上有一份 WireGuard 客户端 `.conf`（wg-quick 或手机 App 导出的那种），可以直接转成 sing-box 配置：
+
+```bash
+python3 -c 'import json;print(json.dumps({"conf":open("phone.conf").read()}))' > req.json
+
+curl -X POST http://127.0.0.1:8000/wireguard2singbox \
+  -H "Content-Type: application/json" -d @req.json > wg.json
+
+sing-box check -c wg.json
+```
+
+转出来的是一份完整配置：`mixed` 入站（默认 `127.0.0.1:2080`）+ `endpoints[]` 里的 wireguard
+endpoint + `direct` 出站。**sing-box 1.13 起旧的 `type: "wireguard"` outbound 已被删除**
+（[deprecated](https://sing-box.sagernet.org/deprecated/)），所以这里只生成 `endpoints[]` 的写法；
+`system` 默认 `false`，走用户态实现，不需要 root 或额外接口。
+
+`.conf` 里的东西去了哪：
+
+| WireGuard | sing-box |
+| --- | --- |
+| `[Interface] Address` | `endpoints[].address`（不带掩码自动补 `/32` / `/128`） |
+| `[Interface] PrivateKey` | `endpoints[].private_key` |
+| `[Interface] MTU` / `ListenPort` | `endpoints[].mtu`（缺省 1408）/ `endpoints[].listen_port` |
+| `[Interface] DNS` | `dns.servers[]`（落在隧道网段内才加 `detour` 走隧道） |
+| `[Peer] PublicKey` / `PresharedKey` | `peers[].public_key` / `peers[].pre_shared_key` |
+| `[Peer] Endpoint` | `peers[].address` + `peers[].port`（不写端口按 51820） |
+| `[Peer] AllowedIPs` | `peers[].allowed_ips`，同时翻译成路由 |
+| `[Peer] PersistentKeepalive` | `peers[].persistent_keepalive_interval` |
+
+**AllowedIPs 会当成路由用**，这点和 wg-quick 一致：只有 AllowedIPs 里的网段走隧道，其余走 `direct`。
+所以 `AllowedIPs = 172.16.0.0/24`（只代理内网那种）转出来只有一条 `ip_cidr` 规则 +
+`route.final: "direct"`；只有 `0.0.0.0/0` + `::/0` 全量接管时才整体默认走隧道。域名对端（如 WARP 的
+`engage.cloudflareclient.com`）也认，会自己带上解析用的 `domain_resolver`。
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `conf` | 必填 | WireGuard `.conf` 全文 |
+| `tag` | `wireguard-out` | endpoint 的 tag，也是路由规则指向的出站 |
+| `full` | `true` | `false` 时只返回那个 endpoint 对象，方便塞进已有配置 |
+| `system` | `false` | 用系统 WireGuard 接口（需要 root），默认走用户态实现 |
+| `mtu` | 空 | 覆盖 `[Interface] MTU` |
+| `mixed_port` | `2080` | 完整配置里 `mixed` 入站的端口 |
+| `resolver` | `dns-local` | 完整配置里本机 DNS server 的 tag，也用来解析对端域名 |
+
+`full=false` 时只给 endpoint，不写 `domain_resolver` 和 `route`（你的配置里未必有 `dns-local`
+这个 tag）；对端是域名的话自己补一个 `domain_resolver`。`Reserved`（Cloudflare WARP 需要的那 3 个
+字节）也支持；未知选项会被忽略（例如 AmneziaWG 的 `Jc` / `S1` 等混淆参数）。段名 / 键名大小写不敏感，
+`#` 之后是注释，和 wg-quick 一样。
+
+> 生成的配置拿 sing-box 1.14.2 实测过 `check` 和 `run`。两个容易踩的坑顺手记一下：对端是域名时
+> `domain_resolver` 必须写在 **endpoint** 上（写进 `peers[]` 会 `unknown field "domain_resolver"`
+> 直接起不来）；DNS server 有 2 个以上时 1.14 强制要求 `route.default_domain_resolver`，否则报
+> `missing route.default_domain_resolver ... is deprecated` 并拒绝启动 —— 生成时会补上。
+
 ## 添加一个 convertor
 
 ConvertorAPI 的能力由一个一个 convertor 组成。每个 convertor 就是一个普通 Python 函数：
@@ -220,7 +277,8 @@ def parse_int(text: str) -> int:
 └── convertors/
     ├── base64_conv.py  # base64_encode / base64_decode
     ├── json_yaml.py    # json_to_yaml / yaml_to_json
-    └── singbox_fix.py  # singbox_migrate / singbox_fix（含迁移引擎）
+    ├── singbox_fix.py  # singbox_migrate / singbox_fix（含迁移引擎）
+    └── wireguard2singbox.py  # wireguard2singbox（WireGuard .conf → sing-box 1.14+ endpoint）
 ```
 
 ## 技术栈
