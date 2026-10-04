@@ -78,8 +78,12 @@ sing-box 1.12 移除 GeoIP/Geosite 条件、1.14 移除 legacy DNS server 旧写
 | 入站 `sniff` / `sniff_timeout` | route 规则 `action: "sniff"` |
 | 入站 `domain_strategy` | route 规则 `action: "resolve"` + `strategy` |
 | 入站 `sniff_override_destination` | 新版无对应字段，删除 |
+| DNS server 的 `detour` 指向「空 direct 出站」 | 给该 direct 出站补 `domain_resolver`（指向一个用 IP 直连的 DNS server） |
 
-迁移是**幂等**的，而且出站（节点）一个字节都不动。
+> `sing-box check` 只校验 schema。最后一条属于**运行时**检查，`check` 会通过、启动时才报
+> `detour to an empty direct outbound makes no sense`，所以别只信 `check`，起一次才算数。
+
+迁移是**幂等**的；节点出站（trojan 等）不做任何改动，只会在必要时给 `direct` 出站补一个字段。
 
 手上已经有一份配置时，用 `POST /singbox_migrate`：
 

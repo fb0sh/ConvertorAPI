@@ -8,6 +8,7 @@
 """
 
 import copy
+import ipaddress
 import json
 import time
 import urllib.error
@@ -110,6 +111,73 @@ def _download_client(section: Any) -> dict[str, Any] | None:
     if isinstance(section, dict) and section.get("download_detour"):
         return {"detour": section["download_detour"]}
     return None
+
+
+def _is_ip_literal(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value.strip("[]"))
+        return True
+    except ValueError:
+        return False
+
+
+def _bootstrap_resolver(servers: list[Any], direct_tags: set[str]) -> str | None:
+    """挑一个「不需要域名解析就能连上」的 DNS server 当 bootstrap 解析器。
+
+    type=local 或 server 是 IP 字面量的都算；优先挑那些自己就走这些 direct 出站的
+    （不依赖代理，不会绕成解析环）。
+    """
+    candidates = [
+        s for s in servers
+        if isinstance(s, dict) and s.get("tag")
+        and (s.get("type") == "local" or _is_ip_literal(str(s.get("server", ""))))
+    ]
+    if not candidates:
+        return None
+    preferred = [s for s in candidates if s.get("detour") in direct_tags]
+    return str((preferred or candidates)[0]["tag"])
+
+
+def _fix_empty_direct_detours(out: dict[str, Any], dns: Any, changes: list[str]) -> None:
+    """DNS server 的 detour 指向「空 direct 出站」时修掉它 —— sing-box run 会在启动时拒绝。
+
+    报错原文：start dns/https[local]: detour to an empty direct outbound makes no sense
+    判定在 common/dialer/detour.go，配合 protocol/direct 的 IsEmpty()：
+    direct 出站的 Dial Fields 为空即视为「空出站」，不能作为 detour 目标。
+    注意 sing-box check 只验 schema，这条只有真正启动才会暴露。
+    """
+    outbounds = out.get("outbounds")
+    if not isinstance(outbounds, list) or not isinstance(dns, dict):
+        return
+
+    by_tag = {o.get("tag"): o for o in outbounds if isinstance(o, dict) and o.get("tag")}
+    empty_directs: list[dict[str, Any]] = []
+    for server in dns.get("servers") or []:
+        if not isinstance(server, dict):
+            continue
+        target = by_tag.get(server.get("detour"))
+        # 只有 {type, tag} 才算空（有 override_address / domain_resolver 等 Dial Fields 就不空）
+        if isinstance(target, dict) and target.get("type") == "direct" and set(target) <= {"type", "tag"}:
+            if target not in empty_directs:
+                empty_directs.append(target)
+
+    if not empty_directs:
+        return
+
+    resolver = _bootstrap_resolver(dns.get("servers") or [], {t.get("tag") for t in empty_directs})
+    for target in empty_directs:
+        if resolver and resolver != target.get("tag"):
+            target["domain_resolver"] = resolver
+            changes.append(
+                f"outbounds[{target.get('tag')}]: 空 direct 出站 → 补 domain_resolver={resolver}"
+                "（否则启动时报 detour to an empty direct outbound）"
+            )
+        else:
+            target["tcp_fast_open"] = True
+            changes.append(
+                f"outbounds[{target.get('tag')}]: 空 direct 出站 → 补 tcp_fast_open"
+                "（配置里没有 IP 型 DNS server 可做 bootstrap）"
+            )
 
 
 def _migrate_rule_sets(rule_sets: Any, changes: list[str]) -> None:
@@ -264,6 +332,10 @@ def migrate_config_with_changes(config: dict) -> tuple[dict, list[str]]:
     if dropped_resolver and "default_domain_resolver" not in route:
         route["default_domain_resolver"] = dropped_resolver
         changes.append(f"route.default_domain_resolver = {dropped_resolver}")
+
+    # 6) DNS server 的 detour 指向空 direct 出站（check 不报，run 才报）
+    if isinstance(dns, dict):
+        _fix_empty_direct_detours(out, dns, changes)
 
     if rule_sets:
         route["rule_set"] = rule_sets

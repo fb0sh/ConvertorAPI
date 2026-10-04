@@ -9,6 +9,9 @@ __pycache__/
 # 会话/工具产生的本地状态
 .agents/
 
+# sing-box 运行时生成（本地跑 check/run 会落在当前目录）
+cache.db
+
 # 编辑器
 .idea/
 .vscode/
