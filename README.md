@@ -19,7 +19,7 @@ ConvertorAPI 是一个用 Python 写的自托管 convertor 服务：把散落在
 | POST | `/json_to_yaml` | JSON 文本 → YAML 文本 |
 | POST | `/yaml_to_json` | YAML 文本 → JSON 对象（顶层须为 mapping） |
 | POST | `/singbox_migrate` | 迁移一份 sing-box 配置：legacy DNS server、rule_set 下载字段、入站旧字段 → 1.14+ 新格式 |
-| GET | `/singbox_fix` | 拉取 sing-box 订阅并返回迁移后的配置，可直接当订阅地址用 |
+| GET | `/singbox_fix` | 拉取 sing-box 订阅、补齐面板漏发的节点、迁移后返回，可直接当订阅地址用 |
 
 `GET /convertors` 返回机器可读的完整清单；`GET /convertors/{name}` 返回单个 convertor 的
 参数、Content-Type、JSON Schema 和示例。
@@ -111,6 +111,21 @@ http://127.0.0.1:8000/singbox_fix?url=https%3A%2F%2F你的机场%2Fapi%2Fv1%2Fcl
 - **同一个订阅会按 User-Agent 下发不同格式**：sing-box 客户端拿到 JSON 配置，Clash 拿到 YAML，v2rayN 拿到 base64 节点列表。`singbox_fix` 默认带 `ua=sing-box/1.14.0`，源站不认这个 UA 时可以换 `ua` 参数。
 - **源站普遍有 UA 白名单和频率限制**，所以 fixer 会缓存回源结果（默认跟随 `profile-update-interval`，限制在 1 分钟到 6 小时之间），不会每次刷新都打源站。
 - 订阅 token 会出现在 fixer 的 URL 和访问日志里，建议只在本机或内网使用。
+
+### 面板的 sing-box 模板会少发节点
+
+实测同一个订阅：sing-box 版配置里只有 33 个 trojan 节点，而传统客户端格式（base64 节点列表）有 **65 个** —— 33 trojan + 32 个 `anytls`，面板的 sing-box 模板根本不下发 anytls（Clash/Mihomo 模板同样只有 33 个）。
+
+所以 `singbox_fix` 默认会**再拉一份节点列表，把缺的节点补进配置**：按 `type + server + port` 去重（trojan 不会重复，只补 anytls），并把这些节点加进已有的 `selector` / `urltest` 组。
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `url` | 必填 | 订阅地址 |
+| `ua` | `sing-box/1.14.0` | 拉 sing-box 版配置用的 UA |
+| `merge_nodes` | `true` | 是否合并节点列表里多出来的节点 |
+| `nodes_ua` | `v2rayN/6.0` | 拉节点列表用的 UA |
+
+代价是每个缓存周期向源站发 2 次请求（配置 + 节点列表），同样由缓存兜住；节点列表拉不到时会退回 sing-box 版，订阅本身仍然可用。不想合并就加 `&merge_nodes=false`。
 
 ## 添加一个 convertor
 

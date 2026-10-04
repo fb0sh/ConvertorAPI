@@ -7,6 +7,7 @@
 这里一次性迁到最新形态，跑在 1.14/1.15 上都不会再报 legacy 错误。
 """
 
+import base64
 import copy
 import ipaddress
 import json
@@ -19,6 +20,8 @@ from typing import Any
 from core.decorator import convertor
 
 DEFAULT_UA = "sing-box/1.14.0"
+# 面板的 sing-box 模板不含 anytls，这些节点只在传统客户端的节点列表里下发
+NODES_UA = "v2rayN/6.0"
 FETCH_TIMEOUT_SECONDS = 20.0
 CACHE_TTL_SECONDS = 300.0
 CACHE_TTL_MIN = 60.0
@@ -39,7 +42,7 @@ _SCHEME_TYPES = {"https": "https", "tls": "tls", "tcp": "tcp", "udp": "udp", "qu
 _DEFAULT_PORTS = {"https": 443, "h3": 443, "tls": 853, "quic": 853}
 
 # 源站普遍按 User-Agent 协商格式且有频率限制，命中过的订阅必须缓存
-_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_cache: dict[str, tuple[float, bytes, float]] = {}
 
 
 # --------------------------------------------------------------------------- #
@@ -367,8 +370,8 @@ def _extract_ttl(headers: Any) -> float:
     return max(CACHE_TTL_MIN, min(CACHE_TTL_MAX, hours * 3600.0))
 
 
-def fetch_subscription(url: str, ua: str = DEFAULT_UA, use_cache: bool = True) -> dict:
-    """按 sing-box 的 User-Agent 拉取订阅并解析成配置对象。"""
+def _fetch_raw(url: str, ua: str, use_cache: bool = True) -> bytes:
+    """按指定 UA 拉取订阅原文（带缓存）。"""
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise ValueError("url 必须是 http(s) 订阅地址")
@@ -377,11 +380,11 @@ def fetch_subscription(url: str, ua: str = DEFAULT_UA, use_cache: bool = True) -
     if use_cache:
         hit = _cache.get(key)
         if hit and time.time() - hit[0] < hit[2]:
-            return copy.deepcopy(hit[1])
+            return hit[1]
 
     request = urllib.request.Request(
         url,
-        headers={"User-Agent": ua, "Accept": "application/json, */*", "Accept-Encoding": "identity"},
+        headers={"User-Agent": ua, "Accept": "application/json, text/plain, */*", "Accept-Encoding": "identity"},
     )
     try:
         with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
@@ -392,7 +395,14 @@ def fetch_subscription(url: str, ua: str = DEFAULT_UA, use_cache: bool = True) -
     except Exception as exc:
         raise ValueError(f"拉取订阅失败（源站可能限流或该 UA 不被接受）：{exc}") from exc
 
-    text = raw.decode("utf-8", errors="replace").strip()
+    if use_cache:
+        _cache[key] = (time.time(), raw, ttl)
+    return raw
+
+
+def fetch_subscription(url: str, ua: str = DEFAULT_UA, use_cache: bool = True) -> dict:
+    """拉取 sing-box 版配置（同一个订阅按 UA 下发不同格式，UA 不对就拿不到 JSON）。"""
+    text = _fetch_raw(url, ua, use_cache).decode("utf-8", errors="replace").strip()
     try:
         config = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -402,10 +412,95 @@ def fetch_subscription(url: str, ua: str = DEFAULT_UA, use_cache: bool = True) -
         ) from exc
     if not isinstance(config, dict):
         raise ValueError("订阅返回的 JSON 顶层不是对象，不是 sing-box 配置")
-
-    if use_cache:
-        _cache[key] = (time.time(), copy.deepcopy(config), ttl)
     return config
+
+
+def _parse_node_uri(uri: str) -> dict[str, Any] | None:
+    """把 trojan:// / anytls:// 节点链接转成 sing-box 出站。"""
+    parts = urllib.parse.urlsplit(uri.strip())
+    scheme = parts.scheme.lower()
+    if scheme not in ("trojan", "anytls") or not parts.hostname or not parts.port:
+        return None
+
+    query = dict(urllib.parse.parse_qsl(parts.query))
+    tag = urllib.parse.unquote(parts.fragment).strip() or f"{parts.hostname}:{parts.port}"
+    outbound: dict[str, Any] = {
+        "type": scheme,
+        "tag": tag,
+        "server": parts.hostname,
+        "server_port": parts.port,
+        "password": urllib.parse.unquote(parts.username or ""),
+    }
+    tls: dict[str, Any] = {"enabled": True}
+    server_name = query.get("sni") or query.get("peer")
+    if server_name:
+        tls["server_name"] = server_name
+    if str(query.get("allowInsecure") or query.get("insecure") or "").lower() in ("1", "true"):
+        tls["insecure"] = True
+    outbound["tls"] = tls
+    return outbound
+
+
+def parse_node_uris(text: str) -> list[dict[str, Any]]:
+    """解析节点列表原文，支持 trojan / anytls（其他协议忽略）。"""
+    nodes = []
+    for line in text.splitlines():
+        if "://" not in line:
+            continue
+        node = _parse_node_uri(line)
+        if node:
+            nodes.append(node)
+    return nodes
+
+
+def fetch_node_list(url: str, ua: str = NODES_UA, use_cache: bool = True) -> list[dict[str, Any]]:
+    """拉传统客户端格式的节点列表（面板只在这种格式里下发 anytls 等节点）。"""
+    text = _fetch_raw(url, ua, use_cache).decode("utf-8", errors="replace").strip()
+    if "://" not in text:  # 多数面板会先 base64 一层
+        try:
+            text = base64.b64decode(text + "=" * (-len(text) % 4)).decode("utf-8", errors="replace")
+        except Exception as exc:
+            raise ValueError(f"节点列表既不是明文也不是可解码的 base64：{exc}") from exc
+    nodes = parse_node_uris(text)
+    if not nodes:
+        raise ValueError("节点列表里没有可解析的 trojan / anytls 节点")
+    return nodes
+
+
+def merge_node_list(config: dict, nodes: list[dict[str, Any]]) -> tuple[dict, list[str]]:
+    """把节点列表里配置缺失的节点补进去，并加入已有的 selector / urltest 组。"""
+    changes: list[str] = []
+    outbounds = config.get("outbounds")
+    if not isinstance(outbounds, list):
+        return config, changes
+
+    known = {(o.get("type"), o.get("server"), o.get("server_port")) for o in outbounds if isinstance(o, dict)}
+    tags = {o.get("tag") for o in outbounds if isinstance(o, dict)}
+    added: list[str] = []
+    for node in nodes:
+        key = (node.get("type"), node.get("server"), node.get("server_port"))
+        if key in known:
+            continue
+        tag = str(node.get("tag") or f"{node.get('server')}:{node.get('server_port')}")
+        suffix = 2
+        while tag in tags:
+            tag = f"{node.get('tag')} ({suffix})"
+            suffix += 1
+        outbounds.append({**node, "tag": tag})
+        tags.add(tag)
+        known.add(key)
+        added.append(tag)
+
+    for tag in added:
+        for group in outbounds:
+            if isinstance(group, dict) and group.get("type") in ("selector", "urltest"):
+                members = group.get("outbounds")
+                if isinstance(members, list) and members:
+                    members.append(tag)
+
+    if added:
+        changes.append(f"节点合并：补进 {len(added)} 个节点并加入选择器（{'、'.join(added[:3])} …）")
+    return config, changes
 
 
 # --------------------------------------------------------------------------- #
@@ -431,6 +526,12 @@ def singbox_migrate(config: dict) -> dict:
     example_input={"url": "https://example.com/api/v1/client/subscribe?token=TOKEN", "ua": DEFAULT_UA},
     example_output={"outbounds": [{"type": "trojan", "tag": "node-01"}]},
 )
-def singbox_fix(url: str, ua: str = DEFAULT_UA) -> dict:
-    """拉取一个订阅（按 sing-box UA 取 JSON 配置）并返回迁移后的配置，可直接当订阅地址用。"""
-    return migrate_config(fetch_subscription(url, ua))
+def singbox_fix(url: str, ua: str = DEFAULT_UA, merge_nodes: bool = True, nodes_ua: str = NODES_UA) -> dict:
+    """拉取一个订阅并返回迁移后的配置：sing-box 版模板 + 节点列表里面板漏发的节点（如 anytls）。"""
+    config = fetch_subscription(url, ua)
+    if merge_nodes:
+        try:
+            config, _ = merge_node_list(config, fetch_node_list(url, nodes_ua))
+        except ValueError:
+            pass  # 节点列表拿不到就退回 sing-box 版，保证订阅本身仍然可用
+    return migrate_config(config)
