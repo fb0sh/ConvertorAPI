@@ -14,7 +14,7 @@ from core.registry import ConvertorEntry, registry
 
 app = FastAPI(
     title="ConvertorAPI",
-    description="A function is a convertor.",
+    description="Many convertors, one API.",
     version="0.1.0",
 )
 
@@ -63,7 +63,7 @@ async def api_index() -> PlainTextResponse:
 
 @app.get("/convertors", tags=["meta"])
 async def list_convertors(category: str | None = None) -> list[dict[str, Any]]:
-    """列出所有转换器，可用 ?category= 过滤。"""
+    """列出所有 convertor，可用 ?category= 过滤。"""
     entries = registry.all()
     if category:
         entries = [entry for entry in entries if entry.category == category]
@@ -72,7 +72,7 @@ async def list_convertors(category: str | None = None) -> list[dict[str, Any]]:
 
 @app.get("/convertors/{name}", tags=["meta"])
 async def get_convertor(name: str) -> dict[str, Any]:
-    """返回单个转换器的完整用法。"""
+    """返回单个 convertor 的完整用法。"""
     entry = registry.get(name)
     if entry is None:
         raise HTTPException(status_code=404, detail=f"convertor not found: {name}")

@@ -1,4 +1,4 @@
-"""JSON 与 YAML 互转的转换器。"""
+"""JSON 与 YAML 互转的 convertor。"""
 
 import json
 

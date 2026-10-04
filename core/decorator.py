@@ -1,4 +1,4 @@
-"""@convertor 装饰器：把一个普通函数注册成一个 HTTP 转换器。"""
+"""@convertor 装饰器：把一个普通函数注册成一个 HTTP convertor。"""
 
 from typing import Any, Callable
 
@@ -16,7 +16,7 @@ def convertor(
     example_input: Any = None,
     example_output: Any = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """把函数注册成转换器；返回原函数本身，不做任何包装。"""
+    """把函数注册成 convertor；返回原函数本身，不做任何包装。"""
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         route = path or f"/{fn.__name__}"

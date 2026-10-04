@@ -7,10 +7,10 @@ from pydantic import BaseModel
 
 from core.registry import registry
 
-TUTORIAL = """## 如何开发一个 Convertor
+TUTORIAL = """## 如何添加一个 Convertor
 
-一个转换器就是一个普通 Python 函数：**函数名 = 路由名**，**参数名 = 请求字段名**，
-**返回值 = 响应本体**。
+ConvertorAPI 的能力由一个一个 convertor 组成。加一个新的 convertor，只要写一个普通
+Python 函数：**函数名 = 路由名**，**参数名 = 请求字段名**，**返回值 = 响应本体**。
 
 ### 最小示例
 
@@ -48,8 +48,8 @@ def shout(text: str) -> str:
 ### 输入规则
 
 - 参数名就是请求字段名。
-- `GET` 转换器：参数从 query string 读取。
-- `POST` 转换器：参数从 JSON body 读取。
+- `GET` convertor：参数从 query string 读取。
+- `POST` convertor：参数从 JSON body 读取。
 - 带类型注解的参数是必填的；带默认值的参数是选填的。
 - 支持 `str`、`int`、`float`、`bool`、`list`、`dict` 等常见类型。
 
@@ -125,18 +125,18 @@ def render_api_doc() -> str:
     lines = [
         "# ConvertorAPI",
         "",
-        "A function is a convertor.",
+        "Many convertors, one API.",
         "",
         "## 元数据路由",
         "",
         "| 方法 | 路径 | 说明 |",
         "| --- | --- | --- |",
         "| GET | `/` | 本页 Markdown 文档 |",
-        "| GET | `/convertors` | 转换器列表，支持 `?category=` 过滤 |",
-        "| GET | `/convertors/{name}` | 单个转换器的完整用法 |",
+        "| GET | `/convertors` | convertor 列表，支持 `?category=` 过滤 |",
+        "| GET | `/convertors/{name}` | 单个 convertor 的完整用法 |",
         "| GET | `/docs` | Swagger UI（FastAPI 内置） |",
         "",
-        "## 当前转换器",
+        "## 当前 convertor",
         "",
         "| 方法 | 路径 | 类别 | 输出 | 说明 |",
         "| --- | --- | --- | --- | --- |",

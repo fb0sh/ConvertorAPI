@@ -1,4 +1,4 @@
-"""把注册表里的转换器挂载成 FastAPI 路由。"""
+"""把注册表里的 convertor 挂载成 FastAPI 路由。"""
 
 import inspect
 import json
@@ -45,7 +45,7 @@ def _render(result: Any, content_type: str) -> Response:
 
 
 def _invoke(fn: Callable[..., Any], params: BaseModel, content_type: str) -> Response:
-    """调用转换器函数并处理异常。"""
+    """调用 convertor 函数并处理异常。"""
     try:
         result = fn(**params.model_dump())
     except HTTPException:
@@ -56,7 +56,7 @@ def _invoke(fn: Callable[..., Any], params: BaseModel, content_type: str) -> Res
 
 
 def build_endpoint(entry: ConvertorEntry) -> Callable[..., Any]:
-    """为一个转换器构造 FastAPI 端点函数。"""
+    """为一个 convertor 构造 FastAPI 端点函数。"""
     request_model = _request_model(entry)
     content_type = entry.produces or infer_output(entry.fn)[0]
 
@@ -73,7 +73,7 @@ def build_endpoint(entry: ConvertorEntry) -> Callable[..., Any]:
 
 
 def mount_all(app: FastAPI) -> None:
-    """把注册表里的全部转换器挂到应用上。"""
+    """把注册表里的全部 convertor 挂到应用上。"""
     for entry in registry.all():
         app.add_api_route(
             entry.path,

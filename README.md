@@ -1,23 +1,26 @@
 # ConvertorAPI
 
-**A function is a convertor.**
+**Many convertors, one API.**
 
-给一个普通 Python 函数加上 `@convertor` 装饰器，它就变成一个 HTTP 接口 —— 不用写路由、不用写请求模型、不用写响应封装。
+ConvertorAPI 是一个用 Python 写的自托管 convertor 服务：把散落在各处的格式转换集中到一个 HTTP API 里。
+现在内置 Base64 和 JSON / YAML，以后会越来越多 —— 每加一个 convertor，只要写一个普通函数。
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg)](https://fastapi.tiangolo.com/)
 [![Pydantic](https://img.shields.io/badge/Pydantic-v2-e92063.svg)](https://docs.pydantic.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-## 它解决什么
+## 已有的 convertor
 
-想把一段转换逻辑暴露成 HTTP 接口，通常得写路由、参数校验、序列化、错误处理，一堆胶水代码。ConvertorAPI 把这些收进一个装饰器里：
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/base64_encode` | 文本 → Base64；`url_safe=true` 使用 URL 安全字符集 |
+| GET | `/base64_decode` | Base64 → 文本 |
+| POST | `/json_to_yaml` | JSON 文本 → YAML 文本 |
+| POST | `/yaml_to_json` | YAML 文本 → JSON 对象（顶层须为 mapping） |
 
-- **函数名 = 路由名**，**参数名 = 请求字段名**，**返回值 = 响应本体**
-- 参数类型用 Python 类型注解声明，自动变成请求校验
-- 返回值类型决定 Content-Type，自动序列化
-- 函数里抛的任何异常自动转成 `400`
-- 加一个 `.py` 文件就多一个接口，不用到处注册
+`GET /convertors` 返回机器可读的完整清单；`GET /convertors/{name}` 返回单个 convertor 的
+参数、Content-Type、JSON Schema 和示例。
 
 ## 快速开始
 
@@ -32,7 +35,7 @@ uv run uvicorn api.main:app --reload
 
 > 需要 [uv](https://docs.astral.sh/uv/)；没有的话：`curl -LsSf https://astral.sh/uv/install.sh | sh`
 
-## 试试看
+## 用起来是什么样
 
 ```bash
 # 文本 → Base64
@@ -57,18 +60,12 @@ curl -X POST http://127.0.0.1:8000/yaml_to_json \
 # {"name": "alice", "age": 30}
 ```
 
-## 内置转换器
+## 添加一个 convertor
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/base64_encode` | 文本 → Base64；`url_safe=true` 使用 URL 安全字符集 |
-| GET | `/base64_decode` | Base64 → 文本 |
-| POST | `/json_to_yaml` | JSON 文本 → YAML 文本 |
-| POST | `/yaml_to_json` | YAML 文本 → JSON 对象（顶层须为 mapping） |
+ConvertorAPI 的能力由一个一个 convertor 组成。每个 convertor 就是一个普通 Python 函数：
+**函数名 = 路由名**，**参数名 = 请求字段名**，**返回值 = 响应本体**。
 
-## 写一个 Convertor
-
-在 `convertors/` 下新建一个 `.py` 文件，写好函数加装饰器就完事，不需要改其他任何文件：
+在 `convertors/` 下新建一个 `.py` 文件，写好函数加装饰器就完事 —— 不需要注册，不需要改其他任何文件：
 
 ```python
 from core.decorator import convertor
@@ -100,8 +97,8 @@ def shout(text: str) -> str:
 
 ### 输入规则
 
-- `GET` 转换器：参数从 query string 读取
-- `POST` 转换器：参数从 JSON body 读取
+- `GET` convertor：参数从 query string 读取
+- `POST` convertor：参数从 JSON body 读取
 - 带默认值的参数是选填的，其余必填
 - 支持 `str`、`int`、`float`、`bool`、`list`、`dict` 等常见类型
 
@@ -135,9 +132,9 @@ def parse_int(text: str) -> int:
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/` | Markdown 文档：元数据路由 + 当前转换器 + 开发教程 |
-| GET | `/convertors` | 转换器列表，支持 `?category=` 过滤 |
-| GET | `/convertors/{name}` | 单个转换器的完整用法（参数、Content-Type、JSON Schema、示例） |
+| GET | `/` | Markdown 文档：元数据路由 + 当前 convertor + 开发教程 |
+| GET | `/convertors` | convertor 列表，支持 `?category=` 过滤 |
+| GET | `/convertors/{name}` | 单个 convertor 的完整用法（参数、Content-Type、JSON Schema、示例） |
 | GET | `/docs` | Swagger UI |
 
 ## 项目结构
@@ -147,12 +144,12 @@ def parse_int(text: str) -> int:
 ├── pyproject.toml
 ├── uv.lock
 ├── core/
-│   ├── registry.py     # ConvertorEntry + Registry：转换器注册表
+│   ├── registry.py     # ConvertorEntry + Registry：convertor 注册表
 │   ├── decorator.py    # @convertor：把函数登记进注册表
 │   └── docs.py         # TUTORIAL、返回类型推断、GET / 的 Markdown 渲染
 ├── api/
 │   ├── main.py         # FastAPI 应用、元数据路由、启动时扫描 convertors
-│   └── mount.py        # 按函数签名生成请求模型并把转换器挂成路由
+│   └── mount.py        # 按函数签名生成请求模型并把 convertor 挂成路由
 └── convertors/
     ├── base64_conv.py  # base64_encode / base64_decode
     └── json_yaml.py    # json_to_yaml / yaml_to_json

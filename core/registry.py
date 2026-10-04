@@ -1,4 +1,4 @@
-"""转换器注册表：保存所有已注册转换器的元数据。"""
+"""convertor 注册表：保存所有已注册 convertor 的元数据。"""
 
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 @dataclass
 class ConvertorEntry:
-    """一个已注册的转换器。"""
+    """一个已注册的 convertor。"""
 
     fn: Callable[..., Any]
     name: str
@@ -19,7 +19,7 @@ class ConvertorEntry:
 
 
 class Registry:
-    """进程内的转换器注册表。"""
+    """进程内的 convertor 注册表。"""
 
     def __init__(self) -> None:
         self._entries: dict[str, ConvertorEntry] = {}
@@ -34,7 +34,7 @@ class Registry:
         example_input: Any = None,
         example_output: Any = None,
     ) -> ConvertorEntry:
-        """注册一个转换器；名字或路由重复时抛出 ValueError。"""
+        """注册一个 convertor；名字或路由重复时抛出 ValueError。"""
         name = fn.__name__
         route = path or f"/{name}"
         http_method = method.upper()
@@ -62,11 +62,11 @@ class Registry:
         return entry
 
     def get(self, name: str) -> ConvertorEntry | None:
-        """按函数名取转换器，取不到返回 None。"""
+        """按函数名取 convertor，取不到返回 None。"""
         return self._entries.get(name)
 
     def all(self) -> list[ConvertorEntry]:
-        """按注册顺序返回全部转换器。"""
+        """按注册顺序返回全部 convertor。"""
         return list(self._entries.values())
 
 

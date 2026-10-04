@@ -1,4 +1,4 @@
-"""Base64 编码 / 解码转换器。"""
+"""Base64 编码 / 解码 convertor。"""
 
 import base64
 
