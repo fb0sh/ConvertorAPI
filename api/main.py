@@ -14,7 +14,7 @@ from core.registry import ConvertorEntry, registry
 
 app = FastAPI(
     title="ConvertorAPI",
-    description="A function is a converter.",
+    description="A function is a convertor.",
     version="0.1.0",
 )
 
@@ -61,8 +61,8 @@ async def api_index() -> PlainTextResponse:
     return PlainTextResponse(render_api_doc(), media_type="text/markdown")
 
 
-@app.get("/converters", tags=["meta"])
-async def list_converters(category: str | None = None) -> list[dict[str, Any]]:
+@app.get("/convertors", tags=["meta"])
+async def list_convertors(category: str | None = None) -> list[dict[str, Any]]:
     """列出所有转换器，可用 ?category= 过滤。"""
     entries = registry.all()
     if category:
@@ -70,12 +70,12 @@ async def list_converters(category: str | None = None) -> list[dict[str, Any]]:
     return [_entry_summary(entry) for entry in entries]
 
 
-@app.get("/converters/{name}", tags=["meta"])
-async def get_converter(name: str) -> dict[str, Any]:
+@app.get("/convertors/{name}", tags=["meta"])
+async def get_convertor(name: str) -> dict[str, Any]:
     """返回单个转换器的完整用法。"""
     entry = registry.get(name)
     if entry is None:
-        raise HTTPException(status_code=404, detail=f"converter not found: {name}")
+        raise HTTPException(status_code=404, detail=f"convertor not found: {name}")
 
     content_type, schema = infer_output(entry.fn)
     return {
@@ -92,13 +92,13 @@ async def get_converter(name: str) -> dict[str, Any]:
     }
 
 
-def _load_converters() -> None:
-    """扫描 converters 包，导入每个模块以触发装饰器注册。"""
-    import converters
+def _load_convertors() -> None:
+    """扫描 convertors 包，导入每个模块以触发装饰器注册。"""
+    import convertors
 
-    for module_info in pkgutil.iter_modules(converters.__path__):
-        importlib.import_module(f"converters.{module_info.name}")
+    for module_info in pkgutil.iter_modules(convertors.__path__):
+        importlib.import_module(f"convertors.{module_info.name}")
 
 
-_load_converters()
+_load_convertors()
 mount_all(app)

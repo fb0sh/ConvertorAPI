@@ -1,7 +1,7 @@
 [project]
 name = "convertor-api"
 version = "0.1.0"
-description = "A function is a converter."
+description = "A function is a convertor."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

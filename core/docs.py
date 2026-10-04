@@ -15,17 +15,17 @@ TUTORIAL = """## 如何开发一个 Convertor
 ### 最小示例
 
 ```python
-from core.decorator import converter
+from core.decorator import convertor
 
 
-@converter(method="GET", category="text")
+@convertor(method="GET", category="text")
 def shout(text: str) -> str:
     \"\"\"把文本转成大写。\"\"\"
     return text.upper()
 ```
 
-把文件放进 `converters/` 目录即可，不需要改任何其他文件：服务启动时会自动扫描
-`converters` 包、导入每个模块（触发装饰器），然后把函数挂载成路由。
+把文件放进 `convertors/` 目录即可，不需要改任何其他文件：服务启动时会自动扫描
+`convertors` 包、导入每个模块（触发装饰器），然后把函数挂载成路由。
 上面的例子可以通过 `GET /shout?text=hi` 访问。
 
 ### 装饰器参数
@@ -34,12 +34,12 @@ def shout(text: str) -> str:
 | --- | --- | --- | --- |
 | `method` | `str` | `"POST"` | HTTP 方法，大小写不敏感 |
 | `path` | `str \\| None` | `None` | 路由路径，默认 `/<函数名>` |
-| `category` | `str` | `"text"` | 分组标签，用于 `/converters?category=` 过滤和 Swagger 标签 |
+| `category` | `str` | `"text"` | 分组标签，用于 `/convertors?category=` 过滤和 Swagger 标签 |
 | `produces` | `str \\| None` | `None` | 显式指定响应 Content-Type，默认由返回类型推断 |
-| `example_input` | `Any` | `None` | 示例入参，展示在 `/converters/{name}` |
-| `example_output` | `Any` | `None` | 示例出参，展示在 `/converters/{name}` |
+| `example_input` | `Any` | `None` | 示例入参，展示在 `/convertors/{name}` |
+| `example_output` | `Any` | `None` | 示例出参，展示在 `/convertors/{name}` |
 
-保留字（不能作为路由首段，也不能作为函数名）：`converters`、`docs`、`redoc`、
+保留字（不能作为路由首段，也不能作为函数名）：`convertors`、`docs`、`redoc`、
 `openapi.json`、`favicon.ico`。
 
 同一个函数名注册两次，或者两条路由的 method + path 完全相同，都会在进程启动时
@@ -71,7 +71,7 @@ def shout(text: str) -> str:
 字段里，不需要自己写 try/except：
 
 ```python
-@converter(method="POST", category="text")
+@convertor(method="POST", category="text")
 def parse_int(text: str) -> int:
     return int(text)  # text="abc" 时返回 400
 ```
@@ -81,10 +81,10 @@ def parse_int(text: str) -> int:
 ```python
 import base64
 
-from core.decorator import converter
+from core.decorator import convertor
 
 
-@converter(
+@convertor(
     method="GET",
     category="encoding",
     example_input={"text": "hello", "url_safe": False},
@@ -125,15 +125,15 @@ def render_api_doc() -> str:
     lines = [
         "# ConvertorAPI",
         "",
-        "A function is a converter.",
+        "A function is a convertor.",
         "",
         "## 元数据路由",
         "",
         "| 方法 | 路径 | 说明 |",
         "| --- | --- | --- |",
         "| GET | `/` | 本页 Markdown 文档 |",
-        "| GET | `/converters` | 转换器列表，支持 `?category=` 过滤 |",
-        "| GET | `/converters/{name}` | 单个转换器的完整用法 |",
+        "| GET | `/convertors` | 转换器列表，支持 `?category=` 过滤 |",
+        "| GET | `/convertors/{name}` | 单个转换器的完整用法 |",
         "| GET | `/docs` | Swagger UI（FastAPI 内置） |",
         "",
         "## 当前转换器",

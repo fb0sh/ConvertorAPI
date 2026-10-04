@@ -2,10 +2,10 @@
 
 import base64
 
-from core.decorator import converter
+from core.decorator import convertor
 
 
-@converter(
+@convertor(
     method="GET",
     category="encoding",
     example_input={"text": "hello", "url_safe": False},
@@ -21,7 +21,7 @@ def base64_encode(text: str, url_safe: bool = False) -> str:
     return out
 
 
-@converter(
+@convertor(
     method="GET",
     category="encoding",
     example_input={"text": "aGVsbG8=", "url_safe": False},

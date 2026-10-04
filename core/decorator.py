@@ -1,14 +1,14 @@
-"""@converter 装饰器：把一个普通函数注册成一个 HTTP 转换器。"""
+"""@convertor 装饰器：把一个普通函数注册成一个 HTTP 转换器。"""
 
 from typing import Any, Callable
 
 from core.registry import registry
 
 # 已被框架占用、不允许作为路由首段的名字
-RESERVED = {"converters", "docs", "redoc", "openapi.json", "favicon.ico"}
+RESERVED = {"convertors", "docs", "redoc", "openapi.json", "favicon.ico"}
 
 
-def converter(
+def convertor(
     method: str = "POST",
     path: str | None = None,
     category: str = "text",

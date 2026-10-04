@@ -1,8 +1,8 @@
 # ConvertorAPI
 
-**A function is a converter.**
+**A function is a convertor.**
 
-给一个普通 Python 函数加上 `@converter` 装饰器，它就变成一个 HTTP 接口 —— 不用写路由、不用写请求模型、不用写响应封装。
+给一个普通 Python 函数加上 `@convertor` 装饰器，它就变成一个 HTTP 接口 —— 不用写路由、不用写请求模型、不用写响应封装。
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg)](https://fastapi.tiangolo.com/)
@@ -68,13 +68,13 @@ curl -X POST http://127.0.0.1:8000/yaml_to_json \
 
 ## 写一个 Convertor
 
-在 `converters/` 下新建一个 `.py` 文件，写好函数加装饰器就完事，不需要改其他任何文件：
+在 `convertors/` 下新建一个 `.py` 文件，写好函数加装饰器就完事，不需要改其他任何文件：
 
 ```python
-from core.decorator import converter
+from core.decorator import convertor
 
 
-@converter(
+@convertor(
     method="GET",
     category="text",
     example_input={"text": "hello"},
@@ -93,10 +93,10 @@ def shout(text: str) -> str:
 | --- | --- | --- | --- |
 | `method` | `str` | `"POST"` | HTTP 方法，大小写不敏感 |
 | `path` | `str \| None` | `None` | 路由路径，默认 `/<函数名>` |
-| `category` | `str` | `"text"` | 分组标签，用于 `/converters?category=` 过滤和 Swagger 标签 |
+| `category` | `str` | `"text"` | 分组标签，用于 `/convertors?category=` 过滤和 Swagger 标签 |
 | `produces` | `str \| None` | `None` | 显式指定响应 Content-Type，默认由返回类型推断 |
-| `example_input` | `Any` | `None` | 示例入参，展示在 `/converters/{name}` |
-| `example_output` | `Any` | `None` | 示例出参，展示在 `/converters/{name}` |
+| `example_input` | `Any` | `None` | 示例入参，展示在 `/convertors/{name}` |
+| `example_output` | `Any` | `None` | 示例出参，展示在 `/convertors/{name}` |
 
 ### 输入规则
 
@@ -121,14 +121,14 @@ def shout(text: str) -> str:
 函数抛出的异常会自动变成 `400 Bad Request`，异常信息放在 `detail` 里：
 
 ```python
-@converter(method="POST", category="text")
+@convertor(method="POST", category="text")
 def parse_int(text: str) -> int:
     return int(text)   # text="abc" → 400
 ```
 
 ### 保留字
 
-以下名字不能作为路由首段（也不能作为函数名）：`converters`、`docs`、`redoc`、`openapi.json`、`favicon.ico`。
+以下名字不能作为路由首段（也不能作为函数名）：`convertors`、`docs`、`redoc`、`openapi.json`、`favicon.ico`。
 同名函数重复注册、或两条路由的 `method + path` 完全相同，启动时直接报错，服务不会带着坏路由起来。
 
 ## 元数据路由
@@ -136,8 +136,8 @@ def parse_int(text: str) -> int:
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/` | Markdown 文档：元数据路由 + 当前转换器 + 开发教程 |
-| GET | `/converters` | 转换器列表，支持 `?category=` 过滤 |
-| GET | `/converters/{name}` | 单个转换器的完整用法（参数、Content-Type、JSON Schema、示例） |
+| GET | `/convertors` | 转换器列表，支持 `?category=` 过滤 |
+| GET | `/convertors/{name}` | 单个转换器的完整用法（参数、Content-Type、JSON Schema、示例） |
 | GET | `/docs` | Swagger UI |
 
 ## 项目结构
@@ -148,12 +148,12 @@ def parse_int(text: str) -> int:
 ├── uv.lock
 ├── core/
 │   ├── registry.py     # ConvertorEntry + Registry：转换器注册表
-│   ├── decorator.py    # @converter：把函数登记进注册表
+│   ├── decorator.py    # @convertor：把函数登记进注册表
 │   └── docs.py         # TUTORIAL、返回类型推断、GET / 的 Markdown 渲染
 ├── api/
-│   ├── main.py         # FastAPI 应用、元数据路由、启动时扫描 converters
+│   ├── main.py         # FastAPI 应用、元数据路由、启动时扫描 convertors
 │   └── mount.py        # 按函数签名生成请求模型并把转换器挂成路由
-└── converters/
+└── convertors/
     ├── base64_conv.py  # base64_encode / base64_decode
     └── json_yaml.py    # json_to_yaml / yaml_to_json
 ```

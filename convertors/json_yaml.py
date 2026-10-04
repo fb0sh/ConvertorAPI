@@ -4,10 +4,10 @@ import json
 
 import yaml
 
-from core.decorator import converter
+from core.decorator import convertor
 
 
-@converter(
+@convertor(
     method="POST",
     category="format",
     produces="text/yaml; charset=utf-8",
@@ -23,7 +23,7 @@ def json_to_yaml(json_text: str, indent: int = 2) -> str:
     return yaml.safe_dump(obj, allow_unicode=True, indent=indent, sort_keys=False)
 
 
-@converter(
+@convertor(
     method="POST",
     category="format",
     produces="application/json",

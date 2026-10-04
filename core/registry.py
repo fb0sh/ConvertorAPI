@@ -40,12 +40,12 @@ class Registry:
         http_method = method.upper()
 
         if name in self._entries:
-            raise ValueError(f"converter name already registered: {name}")
+            raise ValueError(f"convertor name already registered: {name}")
         for existing in self._entries.values():
             if existing.method == http_method and existing.path == route:
                 raise ValueError(
                     f"route already registered: {http_method} {route} "
-                    f"(conflicts with converter {existing.name!r})"
+                    f"(conflicts with convertor {existing.name!r})"
                 )
 
         entry = ConvertorEntry(
